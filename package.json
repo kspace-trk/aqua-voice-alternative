@@ -1,32 +1,26 @@
 {
-  "name": "nuxt-app",
+  "name": "aqua-voice-alternative",
   "private": true,
+  "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "build": "nuxt build",
-    "dev": "nuxt dev",
-    "generate": "nuxt generate",
-    "preview": "nuxt preview",
-    "postinstall": "nuxt prepare",
-    "lint": "eslint",
-    "lint:fix": "eslint --fix",
-    "test": "vitest run",
-    "test:watch": "vitest",
-    "test:coverage": "vitest run --coverage"
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "tauri": "tauri"
   },
   "dependencies": {
-    "@nuxt/image": "latest",
-    "nuxt": "latest",
-    "vue": "latest",
-    "vue-router": "latest"
+    "@google/generative-ai": "^0.24.1",
+    "@tauri-apps/api": "^2",
+    "@tauri-apps/plugin-clipboard-manager": "^2",
+    "@tauri-apps/plugin-fs": "^2",
+    "@tauri-apps/plugin-global-shortcut": "^2",
+    "@tauri-apps/plugin-opener": "^2",
+    "@tauri-apps/plugin-shell": "^2"
   },
   "devDependencies": {
-    "@nuxt/eslint": "latest",
-    "@nuxt/test-utils": "latest",
-    "@vue/test-utils": "latest",
-    "happy-dom": "latest",
-    "playwright-core": "latest",
-    "sass-embedded": "latest",
-    "vitest": "latest"
+    "@tauri-apps/cli": "^2",
+    "typescript": "~5.6.2",
+    "vite": "^6.0.3"
   }
 }

@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AquaVoice Alternative - Settings</title>
+    <meta name="description" content="Voice transcription app using Gemini API" />
+  </head>
+  <body>
+    <div class="container">
+      <header>
+        <h1>🎙️ AquaVoice Alternative</h1>
+        <p>Voice transcription powered by Gemini</p>
+      </header>
+
+      <div class="card">
+        <div class="card-title">Status</div>
+        <div class="status-card">
+          <div id="status-indicator" class="status-indicator idle"></div>
+          <span id="status-text">Ready</span>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">API Settings</div>
+        <div class="form-group">
+          <label for="api-key">Gemini API Key</label>
+          <input
+            type="password"
+            id="api-key"
+            placeholder="Enter your Gemini API key"
+            autocomplete="off"
+          />
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Shortcut</div>
+        <div class="form-group">
+          <label>Recording Shortcut</label>
+          <div class="shortcut-display">
+            <span id="shortcut-display">Not set</span>
+            <button id="set-shortcut" class="btn btn-secondary">Change</button>
+          </div>
+        </div>
+      </div>
+
+      <button id="save-settings" class="btn btn-primary">Save Settings</button>
+    </div>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
