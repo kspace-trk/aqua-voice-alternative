@@ -85,12 +85,16 @@ async function stopRecordingAndTranscribe() {
     isRecording = false;
     
     if (audioBlob.size === 0) {
+      console.log('Audio blob is empty');
       updateStatus('idle');
       return;
     }
     
+    console.log('Audio blob size:', audioBlob.size);
+    
     // Convert to base64
     const audioBase64 = await blobToBase64(audioBlob);
+    console.log('Base64 length:', audioBase64?.length);
     
     // Transcribe with Gemini
     updateStatus('transcribing');
