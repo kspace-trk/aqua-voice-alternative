@@ -1,15 +1,8 @@
-import { register, unregister } from '@tauri-apps/plugin-global-shortcut';
-import { writeText } from '@tauri-apps/plugin-clipboard-manager';
 import { invoke } from '@tauri-apps/api/core';
 import { loadSettings, saveSettings, Settings } from './settings';
-import { AudioRecorder, blobToBase64 } from './recorder';
-import { transcribeAudio } from './transcriber';
 import './styles.css';
 
 let settings: Settings;
-let recorder: AudioRecorder;
-let isRecording = false;
-let currentShortcut: string | null = null;
 
 // UI Elements
 const apiKeyInput = document.getElementById('api-key') as HTMLInputElement;
@@ -20,7 +13,6 @@ const statusIndicator = document.getElementById('status-indicator') as HTMLDivEl
 const statusText = document.getElementById('status-text') as HTMLSpanElement;
 
 async function init() {
-  recorder = new AudioRecorder();
   settings = await loadSettings();
   console.log('Loaded settings:', settings);
   
@@ -28,100 +20,28 @@ async function init() {
   apiKeyInput.value = settings.apiKey;
   shortcutDisplay.textContent = settings.shortcut || 'Not set';
   
-  // Register shortcut if exists
+  // Set API key in Rust backend
+  if (settings.apiKey) {
+    await invoke('set_api_key', { apiKey: settings.apiKey });
+  }
+  
+  // Register shortcut in Rust backend if exists
   if (settings.shortcut) {
-    await registerShortcut(settings.shortcut);
+    await registerShortcutInBackend(settings.shortcut);
   }
   
   updateStatus('idle');
 }
 
-async function registerShortcut(shortcut: string) {
-  // Unregister previous shortcut
-  if (currentShortcut) {
-    try {
-      await unregister(currentShortcut);
-    } catch {
-      // Ignore if already unregistered
-    }
-  }
-  
+async function registerShortcutInBackend(shortcut: string) {
   try {
-    await register(shortcut, async (event) => {
-      if (event.state === 'Pressed') {
-        await startRecording();
-      } else if (event.state === 'Released') {
-        await stopRecordingAndTranscribe();
-      }
-    });
-    currentShortcut = shortcut;
-    console.log(`Registered shortcut: ${shortcut}`);
+    await invoke('register_shortcut', { shortcutStr: shortcut });
+    console.log(`Registered shortcut in backend: ${shortcut}`);
+    updateStatus('success', 'Shortcut registered!');
+    setTimeout(() => updateStatus('idle'), 2000);
   } catch (error) {
     console.error('Failed to register shortcut:', error);
-    throw error;
-  }
-}
-
-async function startRecording() {
-  if (isRecording) return;
-  
-  try {
-    isRecording = true;
-    updateStatus('recording');
-    await recorder.start();
-  } catch (error) {
-    console.error('Failed to start recording:', error);
-    isRecording = false;
-    updateStatus('error', 'Failed to start recording');
-  }
-}
-
-async function stopRecordingAndTranscribe() {
-  if (!isRecording) return;
-  
-  try {
-    updateStatus('processing');
-    const audioBlob = await recorder.stop();
-    isRecording = false;
-    
-    if (audioBlob.size === 0) {
-      console.log('Audio blob is empty');
-      updateStatus('idle');
-      return;
-    }
-    
-    console.log('Audio blob size:', audioBlob.size);
-    
-    // Convert to base64
-    const audioBase64 = await blobToBase64(audioBlob);
-    console.log('Base64 length:', audioBase64?.length);
-    
-    // Transcribe with Gemini
-    updateStatus('transcribing');
-    const text = await transcribeAudio(settings.apiKey, audioBase64);
-    
-    if (text) {
-      // Copy to clipboard
-      await writeText(text);
-      
-      // Small delay before pasting
-      await new Promise((resolve) => setTimeout(resolve, 100));
-      
-      // Paste using osascript
-      await invoke('execute_paste');
-      
-      updateStatus('success', `Transcribed: ${text.substring(0, 50)}...`);
-    } else {
-      updateStatus('idle');
-    }
-    
-    // Reset status after a short delay
-    setTimeout(() => updateStatus('idle'), 3000);
-  } catch (error) {
-    console.error('Transcription failed:', error);
-    isRecording = false;
-    updateStatus('error', `Error: ${error}`);
-    setTimeout(() => updateStatus('idle'), 3000);
+    updateStatus('error', `Shortcut error: ${error}`);
   }
 }
 
@@ -129,7 +49,7 @@ function updateStatus(status: 'idle' | 'recording' | 'processing' | 'transcribin
   statusIndicator.className = 'status-indicator ' + status;
   
   const statusMessages: Record<string, string> = {
-    idle: 'Ready',
+    idle: 'Ready (Recording handled by Rust backend)',
     recording: '🎙️ Recording...',
     processing: '⏳ Processing...',
     transcribing: '🔄 Transcribing...',
@@ -154,7 +74,25 @@ setShortcutBtn.addEventListener('click', () => {
     
     // Add the actual key (ignore modifier-only presses)
     if (!['Control', 'Shift', 'Alt', 'Meta'].includes(e.key)) {
-      parts.push(e.key.toUpperCase());
+      // Map special keys to their names
+      const keyMap: Record<string, string> = {
+        ' ': 'SPACE',
+        'ArrowUp': 'UP',
+        'ArrowDown': 'DOWN',
+        'ArrowLeft': 'LEFT',
+        'ArrowRight': 'RIGHT',
+        'Enter': 'ENTER',
+        'Escape': 'ESCAPE',
+        'Tab': 'TAB',
+        'Backspace': 'BACKSPACE',
+        'Delete': 'DELETE',
+        'Home': 'HOME',
+        'End': 'END',
+        'PageUp': 'PAGEUP',
+        'PageDown': 'PAGEDOWN',
+      };
+      const keyName = keyMap[e.key] || e.key.toUpperCase();
+      parts.push(keyName);
       
       const newShortcut = parts.join('+');
       shortcutDisplay.textContent = newShortcut;
@@ -173,9 +111,12 @@ saveBtn.addEventListener('click', async () => {
   try {
     await saveSettings(settings);
     
-    // Re-register shortcut with new settings
+    // Update API key in Rust backend
+    await invoke('set_api_key', { apiKey: settings.apiKey });
+    
+    // Re-register shortcut in Rust backend
     if (settings.shortcut) {
-      await registerShortcut(settings.shortcut);
+      await registerShortcutInBackend(settings.shortcut);
     }
     
     updateStatus('success', 'Settings saved!');
