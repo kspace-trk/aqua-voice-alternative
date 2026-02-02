@@ -263,15 +263,19 @@ fn update_tray_status(app: &AppHandle, status: &str) {
     let state = app.state::<AppState>();
     let tray_lock = state.tray_icon.lock().unwrap();
     if let Some(tray) = tray_lock.as_ref() {
-        let tooltip = match status {
-            "recording" => "AquaVoice - 🎙️ Recording...",
-            "processing" => "AquaVoice - ⏳ Processing...",
-            "transcribing" => "AquaVoice - 🔄 Transcribing...",
-            "success" => "AquaVoice - ✅ Done",
-            "error" => "AquaVoice - ❌ Error",
-            _ => "AquaVoice - Ready",
+        let (tooltip, title) = match status {
+            "recording" => ("AquaVoice - Recording...", "🎙️"),
+            "processing" => ("AquaVoice - Processing...", "⏳"),
+            "transcribing" => ("AquaVoice - Transcribing...", "🔄"),
+            "success" => ("AquaVoice - Done", "✅"),
+            "error" => ("AquaVoice - Error", "❌"),
+            _ => ("AquaVoice - Ready", ""),
         };
+        println!("Updating tray status to: {} ({})", status, title);
         let _ = tray.set_tooltip(Some(tooltip));
+        let _ = tray.set_title(Some(title));
+    } else {
+        println!("Warning: Tray icon not available");
     }
 }
 
