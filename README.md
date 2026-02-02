@@ -1,7 +1,8 @@
-# Tauri + Vanilla TS
+# AquaVoice Alternative
 
-This template should help get you started developing with Tauri in vanilla HTML, CSS and Typescript.
+AquaVoice を使って文字起こししていたのですが、無料プランだとレートリミットに引っかかってしまいました。
+そこで、Gemini API KEY を使用して文字起こし可能な、Tauri製のアプリケーションを作成しました。
 
-## Recommended IDE Setup
-
-- [VS Code](https://code.visualstudio.com/) + [Tauri](https://marketplace.visualstudio.com/items?itemName=tauri-apps.tauri-vscode) + [rust-analyzer](https://marketplace.visualstudio.com/items?itemName=rust-lang.rust-analyzer)
+- バックグラウンド常時起動
+- UI画面にてキーバインド設定可能
+- Gemini のモデルと API KEY をUIより設定可能
