@@ -7,7 +7,7 @@ use std::sync::{Arc, Mutex};
 use tauri::{
     menu::{Menu, MenuItem},
     tray::TrayIconBuilder,
-    AppHandle, Manager,
+    AppHandle, Emitter, Manager,
 };
 use tauri_plugin_clipboard_manager::ClipboardExt;
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
@@ -381,9 +381,11 @@ fn start_audio_processing(app: AppHandle, mut rx: mpsc::Receiver<AudioCommand>) 
                     let mut state = recording_state.lock().unwrap();
                     state.samples.clear();
                     state.is_recording = true;
+                    let _ = app.emit("status-changed", "recording");
                 }
                 Some(AudioCommand::StopRecording) => {
                     println!("Stopping recording...");
+                    let _ = app.emit("status-changed", "processing");
                     let samples: Vec<f32>;
                     {
                         let mut state = recording_state.lock().unwrap();
@@ -393,6 +395,7 @@ fn start_audio_processing(app: AppHandle, mut rx: mpsc::Receiver<AudioCommand>) 
 
                     if samples.is_empty() {
                         println!("No audio recorded");
+                        let _ = app.emit("status-changed", "error:No audio recorded");
                         continue;
                     }
 
@@ -423,6 +426,7 @@ fn start_audio_processing(app: AppHandle, mut rx: mpsc::Receiver<AudioCommand>) 
 
                     // Transcribe with Gemini
                     let app_clone = app.clone();
+                    let _ = app.emit("status-changed", "transcribing");
                     rt.block_on(async {
                         match transcribe_with_gemini(&api_key, &wav_data).await {
                             Ok(text) => {
@@ -442,11 +446,18 @@ fn start_audio_processing(app: AppHandle, mut rx: mpsc::Receiver<AudioCommand>) 
                                         .await;
 
                                     // Paste
-                                    execute_paste(app_clone);
+                                    execute_paste(app_clone.clone());
+
+                                    let _ = app_clone.emit("status-changed", "success");
+                                    std::thread::sleep(std::time::Duration::from_secs(2));
+                                    let _ = app_clone.emit("status-changed", "idle");
                                 }
                             }
                             Err(e) => {
                                 eprintln!("Transcription error: {}", e);
+                                let _ = app_clone.emit("status-changed", format!("error:{}", e));
+                                std::thread::sleep(std::time::Duration::from_secs(2));
+                                let _ = app_clone.emit("status-changed", "idle");
                             }
                         }
                     });

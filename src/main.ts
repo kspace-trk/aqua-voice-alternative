@@ -1,4 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
 import { loadSettings, saveSettings, Settings } from './settings';
 import './styles.css';
 
@@ -31,6 +32,19 @@ async function init() {
   }
   
   updateStatus('idle');
+
+  // Listen to status changes from Rust backend
+  await listen<string>('status-changed', (event) => {
+    const status = event.payload;
+    console.log('Status changed:', status);
+
+    if (status.startsWith('error:')) {
+      const errorMessage = status.substring(6);
+      updateStatus('error', errorMessage);
+    } else {
+      updateStatus(status as 'idle' | 'recording' | 'processing' | 'transcribing' | 'success' | 'error');
+    }
+  });
 }
 
 async function registerShortcutInBackend(shortcut: string) {
