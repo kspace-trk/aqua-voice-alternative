@@ -1,6 +1,12 @@
 # AquaVoice Alternative
 
 Gemini API KEY を使用して文字起こし可能な、Tauri製のMacアプリ
+(VibeCodingで作ったよ)
+
+## 作者所感
+
+- 精度は悪くない
+- でも Gemini 3 Pro 使ってるからめちゃ遅い (UI で Gemini のモデルを変更可能)
 
 ## 特徴
 
