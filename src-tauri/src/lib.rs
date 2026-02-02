@@ -6,7 +6,7 @@ use std::io::Cursor;
 use std::sync::{Arc, Mutex};
 use tauri::{
     menu::{Menu, MenuItem},
-    tray::TrayIconBuilder,
+    tray::{TrayIcon, TrayIconBuilder},
     AppHandle, Emitter, Manager,
 };
 use tauri_plugin_clipboard_manager::ClipboardExt;
@@ -42,6 +42,7 @@ struct AppState {
     audio_sender: Mutex<Option<mpsc::Sender<AudioCommand>>>,
     api_key: Mutex<String>,
     model: Mutex<String>,
+    tray_icon: Mutex<Option<TrayIcon>>,
 }
 
 enum AudioCommand {
@@ -258,6 +259,22 @@ fn parse_shortcut(s: &str) -> Result<Shortcut, String> {
     Ok(Shortcut::new(Some(modifiers), code))
 }
 
+fn update_tray_status(app: &AppHandle, status: &str) {
+    let state = app.state::<AppState>();
+    let tray_lock = state.tray_icon.lock().unwrap();
+    if let Some(tray) = tray_lock.as_ref() {
+        let tooltip = match status {
+            "recording" => "AquaVoice - 🎙️ Recording...",
+            "processing" => "AquaVoice - ⏳ Processing...",
+            "transcribing" => "AquaVoice - 🔄 Transcribing...",
+            "success" => "AquaVoice - ✅ Done",
+            "error" => "AquaVoice - ❌ Error",
+            _ => "AquaVoice - Ready",
+        };
+        let _ = tray.set_tooltip(Some(tooltip));
+    }
+}
+
 fn samples_to_wav(samples: &[f32], sample_rate: u32) -> Result<Vec<u8>, String> {
     let spec = WavSpec {
         channels: 1,
@@ -388,10 +405,12 @@ fn start_audio_processing(app: AppHandle, mut rx: mpsc::Receiver<AudioCommand>) 
                     let mut state = recording_state.lock().unwrap();
                     state.samples.clear();
                     state.is_recording = true;
+                    update_tray_status(&app, "recording");
                     let _ = app.emit("status-changed", "recording");
                 }
                 Some(AudioCommand::StopRecording) => {
                     println!("Stopping recording...");
+                    update_tray_status(&app, "processing");
                     let _ = app.emit("status-changed", "processing");
                     let samples: Vec<f32>;
                     {
@@ -402,7 +421,10 @@ fn start_audio_processing(app: AppHandle, mut rx: mpsc::Receiver<AudioCommand>) 
 
                     if samples.is_empty() {
                         println!("No audio recorded");
+                        update_tray_status(&app, "error");
                         let _ = app.emit("status-changed", "error:No audio recorded");
+                        std::thread::sleep(std::time::Duration::from_secs(2));
+                        update_tray_status(&app, "idle");
                         continue;
                     }
 
@@ -439,6 +461,7 @@ fn start_audio_processing(app: AppHandle, mut rx: mpsc::Receiver<AudioCommand>) 
 
                     // Transcribe with Gemini
                     let app_clone = app.clone();
+                    update_tray_status(&app, "transcribing");
                     let _ = app.emit("status-changed", "transcribing");
                     rt.block_on(async {
                         match transcribe_with_gemini(&api_key, &model, &wav_data).await {
@@ -461,15 +484,19 @@ fn start_audio_processing(app: AppHandle, mut rx: mpsc::Receiver<AudioCommand>) 
                                     // Paste
                                     execute_paste(app_clone.clone());
 
+                                    update_tray_status(&app_clone, "success");
                                     let _ = app_clone.emit("status-changed", "success");
                                     std::thread::sleep(std::time::Duration::from_secs(2));
+                                    update_tray_status(&app_clone, "idle");
                                     let _ = app_clone.emit("status-changed", "idle");
                                 }
                             }
                             Err(e) => {
                                 eprintln!("Transcription error: {}", e);
+                                update_tray_status(&app_clone, "error");
                                 let _ = app_clone.emit("status-changed", format!("error:{}", e));
                                 std::thread::sleep(std::time::Duration::from_secs(2));
+                                update_tray_status(&app_clone, "idle");
                                 let _ = app_clone.emit("status-changed", "idle");
                             }
                         }
@@ -491,6 +518,7 @@ pub fn run() {
             audio_sender: Mutex::new(Some(tx)),
             api_key: Mutex::new(String::new()),
             model: Mutex::new(String::from("gemini-3-pro-preview")),
+            tray_icon: Mutex::new(None),
         })
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
@@ -516,8 +544,9 @@ pub fn run() {
             let menu = Menu::with_items(app, &[&settings, &quit])?;
 
             // Build tray icon
-            let _tray = TrayIconBuilder::new()
+            let tray = TrayIconBuilder::new()
                 .icon(app.default_window_icon().unwrap().clone())
+                .tooltip("AquaVoice - Ready")
                 .menu(&menu)
                 .on_menu_event(|app, event| match event.id.as_ref() {
                     "quit" => {
@@ -534,6 +563,10 @@ pub fn run() {
                     _ => {}
                 })
                 .build(app)?;
+
+            // Store tray icon in app state
+            let state = app.state::<AppState>();
+            *state.tray_icon.lock().unwrap() = Some(tray);
 
             // Prevent window close from exiting the app
             if let Some(window) = app.get_webview_window("main") {
