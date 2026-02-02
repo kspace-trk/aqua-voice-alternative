@@ -3,6 +3,13 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
+  "description": "Voice transcription app using Gemini API",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/kspace-trk/aqua-voice-alternative.git"
+  },
+  "license": "MIT",
+  "author": "kspace-trk",
   "scripts": {
     "dev": "tauri dev",
     "build": "tauri build"
