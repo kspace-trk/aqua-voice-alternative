@@ -476,6 +476,9 @@ fn samples_to_wav(samples: &[f32], sample_rate: u32) -> Result<Vec<u8>, String> 
 async fn transcribe_with_gemini(api_key: &str, model: &str, audio_data: &[u8]) -> Result<String, String> {
     let base64_audio = base64::engine::general_purpose::STANDARD.encode(audio_data);
 
+    // Load transcription prompt from file
+    const TRANSCRIPTION_PROMPT: &str = include_str!("../prompts/transcription.txt");
+
     let request = GeminiRequest {
         contents: vec![Content {
             parts: vec![
@@ -486,8 +489,7 @@ async fn transcribe_with_gemini(api_key: &str, model: &str, audio_data: &[u8]) -
                     },
                 },
                 Part::Text {
-                    text: "これは、PC作業時の音声入力のための音声です。音声を文字起こししてください。音声の内容のみを出力し、余計な説明は不要です。"
-                        .to_string(),
+                    text: TRANSCRIPTION_PROMPT.to_string(),
                 },
             ],
         }],
