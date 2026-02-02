@@ -1,11 +1,13 @@
 export interface Settings {
   apiKey: string;
   shortcut: string;
+  model: string;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
   apiKey: '',
   shortcut: 'CommandOrControl+Shift+Space',
+  model: 'gemini-3-pro-preview',
 };
 
 export async function loadSettings(): Promise<Settings> {

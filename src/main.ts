@@ -7,6 +7,7 @@ let settings: Settings;
 
 // UI Elements
 const apiKeyInput = document.getElementById('api-key') as HTMLInputElement;
+const modelInput = document.getElementById('model') as HTMLInputElement;
 const shortcutDisplay = document.getElementById('shortcut-display') as HTMLSpanElement;
 const setShortcutBtn = document.getElementById('set-shortcut') as HTMLButtonElement;
 const saveBtn = document.getElementById('save-settings') as HTMLButtonElement;
@@ -19,11 +20,17 @@ async function init() {
   
   // Populate UI
   apiKeyInput.value = settings.apiKey;
+  modelInput.value = settings.model;
   shortcutDisplay.textContent = settings.shortcut || 'Not set';
-  
+
   // Set API key in Rust backend
   if (settings.apiKey) {
     await invoke('set_api_key', { apiKey: settings.apiKey });
+  }
+
+  // Set model in Rust backend
+  if (settings.model) {
+    await invoke('set_model', { model: settings.model });
   }
   
   // Register shortcut in Rust backend if exists
@@ -121,18 +128,22 @@ setShortcutBtn.addEventListener('click', () => {
 
 saveBtn.addEventListener('click', async () => {
   settings.apiKey = apiKeyInput.value.trim();
-  
+  settings.model = modelInput.value.trim();
+
   try {
     await saveSettings(settings);
-    
+
     // Update API key in Rust backend
     await invoke('set_api_key', { apiKey: settings.apiKey });
-    
+
+    // Update model in Rust backend
+    await invoke('set_model', { model: settings.model });
+
     // Re-register shortcut in Rust backend
     if (settings.shortcut) {
       await registerShortcutInBackend(settings.shortcut);
     }
-    
+
     updateStatus('success', 'Settings saved!');
     setTimeout(() => updateStatus('idle'), 2000);
   } catch (error) {

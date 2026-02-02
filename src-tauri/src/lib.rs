@@ -42,6 +42,7 @@ struct AppState {
     current_shortcut: Mutex<Option<Shortcut>>,
     audio_sender: Mutex<Option<mpsc::Sender<AudioCommand>>>,
     api_key: Mutex<String>,
+    model: Mutex<String>,
 }
 
 enum AudioCommand {
@@ -131,6 +132,13 @@ fn set_api_key(app: AppHandle, api_key: String) {
     let state = app.state::<AppState>();
     *state.api_key.lock().unwrap() = api_key;
     println!("API key updated");
+}
+
+#[tauri::command]
+fn set_model(app: AppHandle, model: String) {
+    let state = app.state::<AppState>();
+    *state.model.lock().unwrap() = model;
+    println!("Model updated");
 }
 
 #[tauri::command]
@@ -278,7 +286,7 @@ fn samples_to_wav(samples: &[f32], sample_rate: u32) -> Result<Vec<u8>, String> 
     Ok(cursor.into_inner())
 }
 
-async fn transcribe_with_gemini(api_key: &str, audio_data: &[u8]) -> Result<String, String> {
+async fn transcribe_with_gemini(api_key: &str, model: &str, audio_data: &[u8]) -> Result<String, String> {
     let base64_audio = base64::engine::general_purpose::STANDARD.encode(audio_data);
 
     let request = GeminiRequest {
@@ -300,8 +308,8 @@ async fn transcribe_with_gemini(api_key: &str, audio_data: &[u8]) -> Result<Stri
 
     let client = reqwest::Client::new();
     let url = format!(
-        "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={}",
-        api_key
+        "https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent?key={}",
+        model, api_key
     );
 
     let response = client
@@ -412,11 +420,12 @@ fn start_audio_processing(app: AppHandle, mut rx: mpsc::Receiver<AudioCommand>) 
 
                     println!("WAV data size: {} bytes", wav_data.len());
 
-                    // Get API key
-                    let api_key: String = {
+                    // Get API key and model
+                    let (api_key, model): (String, String) = {
                         let state = app.state::<AppState>();
-                        let guard = state.api_key.lock().unwrap();
-                        guard.clone()
+                        let api_key = state.api_key.lock().unwrap().clone();
+                        let model = state.model.lock().unwrap().clone();
+                        (api_key, model)
                     };
 
                     if api_key.is_empty() {
@@ -424,11 +433,16 @@ fn start_audio_processing(app: AppHandle, mut rx: mpsc::Receiver<AudioCommand>) 
                         continue;
                     }
 
+                    if model.is_empty() {
+                        eprintln!("No model set");
+                        continue;
+                    }
+
                     // Transcribe with Gemini
                     let app_clone = app.clone();
                     let _ = app.emit("status-changed", "transcribing");
                     rt.block_on(async {
-                        match transcribe_with_gemini(&api_key, &wav_data).await {
+                        match transcribe_with_gemini(&api_key, &model, &wav_data).await {
                             Ok(text) => {
                                 println!("Transcription result: {}", text);
 
@@ -477,6 +491,7 @@ pub fn run() {
             current_shortcut: Mutex::new(None),
             audio_sender: Mutex::new(Some(tx)),
             api_key: Mutex::new(String::new()),
+            model: Mutex::new(String::from("gemini-3-pro-preview")),
         })
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
@@ -542,6 +557,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             execute_paste,
             set_api_key,
+            set_model,
             register_shortcut
         ])
         .run(tauri::generate_context!())
