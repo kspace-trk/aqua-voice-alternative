@@ -1,7 +1,6 @@
 # AquaVoice Alternative
 
-AquaVoice を使って文字起こししていたのですが、無料プランだとレートリミットに引っかかってしまいました。
-そこで、Gemini API KEY を使用して文字起こし可能な、Tauri製のアプリケーションを作成しました。
+Gemini API KEY を使用して文字起こし可能な、Tauri製のMacアプリ
 
 ## 特徴
 
