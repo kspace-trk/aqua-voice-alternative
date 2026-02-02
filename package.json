@@ -12,7 +12,8 @@
   "author": "kspace-trk",
   "scripts": {
     "dev": "tauri dev",
-    "build": "tauri build"
+    "build": "tauri build",
+    "tauri": "tauri"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
