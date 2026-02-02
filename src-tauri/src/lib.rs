@@ -47,6 +47,7 @@ struct AppState {
     model: Mutex<String>,
     tray_icon: Mutex<Option<TrayIcon>>,
     animation_running: Arc<Mutex<bool>>,
+    current_animation: Mutex<Option<String>>,
 }
 
 enum AudioCommand {
@@ -358,9 +359,29 @@ fn create_transcribing_icon(frame: u8) -> Vec<u8> {
 fn start_icon_animation(app: AppHandle, animation_type: &str) {
     let state = app.state::<AppState>();
 
+    // Check if the same animation is already running
+    {
+        let current = state.current_animation.lock().unwrap();
+        if let Some(ref current_type) = *current {
+            if current_type == animation_type {
+                return; // Same animation already running, skip
+            }
+        }
+    }
+
     // Stop any existing animation
     *state.animation_running.lock().unwrap() = false;
-    std::thread::sleep(Duration::from_millis(50)); // Wait for previous animation to stop
+
+    // Wait for previous animation to fully stop (max 300ms)
+    for _ in 0..6 {
+        std::thread::sleep(Duration::from_millis(50));
+        if !*state.animation_running.lock().unwrap() {
+            break;
+        }
+    }
+
+    // Set current animation type
+    *state.current_animation.lock().unwrap() = Some(animation_type.to_string());
 
     // Start new animation
     let animation_running = Arc::clone(&state.animation_running);
@@ -395,15 +416,20 @@ fn start_icon_animation(app: AppHandle, animation_type: &str) {
             frame = (frame + 1) % 8;
             std::thread::sleep(Duration::from_millis(125)); // 8 FPS
         }
+
+        // Clear current animation type when stopped
+        let state = app.state::<AppState>();
+        *state.current_animation.lock().unwrap() = None;
     });
 }
 
 fn stop_icon_animation(app: &AppHandle) {
     let state = app.state::<AppState>();
     *state.animation_running.lock().unwrap() = false;
+    *state.current_animation.lock().unwrap() = None;
 
     // Restore default icon
-    std::thread::sleep(Duration::from_millis(150));
+    std::thread::sleep(Duration::from_millis(200));
     let tray_lock = state.tray_icon.lock().unwrap();
     if let Some(tray) = tray_lock.as_ref() {
         if let Some(icon) = app.default_window_icon() {
@@ -693,6 +719,7 @@ pub fn run() {
             model: Mutex::new(String::from("gemini-3-pro-preview")),
             tray_icon: Mutex::new(None),
             animation_running: Arc::new(Mutex::new(false)),
+            current_animation: Mutex::new(None),
         })
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
