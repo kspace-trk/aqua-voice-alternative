@@ -17,7 +17,6 @@ use tokio::sync::mpsc;
 #[link(name = "ApplicationServices", kind = "framework")]
 extern "C" {
     fn AXIsProcessTrustedWithOptions(options: core_foundation::dictionary::CFDictionaryRef) -> bool;
-    fn AXIsProcessTrusted() -> bool;
 }
 
 #[cfg(target_os = "macos")]
