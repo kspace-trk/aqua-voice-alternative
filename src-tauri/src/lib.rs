@@ -4,7 +4,9 @@ use hound::{WavSpec, WavWriter};
 use serde::{Deserialize, Serialize};
 use std::io::Cursor;
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 use tauri::{
+    image::Image,
     menu::{Menu, MenuItem},
     tray::{TrayIcon, TrayIconBuilder},
     AppHandle, Emitter, Manager,
@@ -12,6 +14,7 @@ use tauri::{
 use tauri_plugin_clipboard_manager::ClipboardExt;
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 use tokio::sync::mpsc;
+use tiny_skia::{Pixmap, Paint, PathBuilder, Stroke, Transform};
 
 #[cfg(target_os = "macos")]
 #[link(name = "ApplicationServices", kind = "framework")]
@@ -43,6 +46,7 @@ struct AppState {
     api_key: Mutex<String>,
     model: Mutex<String>,
     tray_icon: Mutex<Option<TrayIcon>>,
+    animation_running: Arc<Mutex<bool>>,
 }
 
 enum AudioCommand {
@@ -259,23 +263,186 @@ fn parse_shortcut(s: &str) -> Result<Shortcut, String> {
     Ok(Shortcut::new(Some(modifiers), code))
 }
 
+// Generate animated icon frames
+fn create_icon_pixmap(size: u32) -> Pixmap {
+    Pixmap::new(size, size).unwrap()
+}
+
+fn create_recording_icon(frame: u8) -> Vec<u8> {
+    let size = 32;
+    let mut pixmap = create_icon_pixmap(size);
+    let center = size as f32 / 2.0;
+
+    // Pulsing red circle effect
+    let scale = 0.6 + (frame as f32 / 8.0) * 0.4; // Pulse between 0.6 and 1.0
+    let radius = center * scale;
+
+    let mut paint = Paint::default();
+    paint.set_color_rgba8(255, 50, 50, 255);
+    paint.anti_alias = true;
+
+    let circle = PathBuilder::from_circle(center, center, radius).unwrap();
+    pixmap.fill_path(&circle, &paint, tiny_skia::FillRule::Winding, Transform::identity(), None);
+
+    // Inner circle
+    let inner_radius = radius * 0.6;
+    paint.set_color_rgba8(180, 30, 30, 255);
+    let inner_circle = PathBuilder::from_circle(center, center, inner_radius).unwrap();
+    pixmap.fill_path(&inner_circle, &paint, tiny_skia::FillRule::Winding, Transform::identity(), None);
+
+    pixmap.encode_png().unwrap()
+}
+
+fn create_processing_icon(frame: u8) -> Vec<u8> {
+    let size = 32;
+    let mut pixmap = create_icon_pixmap(size);
+    let center = size as f32 / 2.0;
+
+    // Rotating spinner
+    let angle = (frame as f32 / 8.0) * std::f32::consts::PI * 2.0;
+
+    let mut paint = Paint::default();
+    paint.set_color_rgba8(100, 150, 255, 255);
+    paint.anti_alias = true;
+
+    let mut stroke = Stroke::default();
+    stroke.width = 3.0;
+
+    // Draw arcs
+    for i in 0..3 {
+        let offset = (i as f32 * std::f32::consts::PI * 2.0 / 3.0) + angle;
+        let start_x = center + (center * 0.6 * offset.cos());
+        let start_y = center + (center * 0.6 * offset.sin());
+
+        let mut path = PathBuilder::new();
+        path.move_to(start_x, start_y);
+        path.line_to(center + (center * 0.9 * offset.cos()), center + (center * 0.9 * offset.sin()));
+        let path = path.finish().unwrap();
+
+        pixmap.stroke_path(&path, &paint, &stroke, Transform::identity(), None);
+    }
+
+    pixmap.encode_png().unwrap()
+}
+
+fn create_transcribing_icon(frame: u8) -> Vec<u8> {
+    let size = 32;
+    let mut pixmap = create_icon_pixmap(size);
+    let center = size as f32 / 2.0;
+
+    // Wave animation
+    let mut paint = Paint::default();
+    paint.set_color_rgba8(100, 200, 100, 255);
+    paint.anti_alias = true;
+
+    let bar_width = 3.0;
+    let spacing = 5.0;
+    let num_bars = 5;
+
+    for i in 0..num_bars {
+        let x = (size as f32 - (num_bars as f32 * (bar_width + spacing))) / 2.0 + i as f32 * (bar_width + spacing);
+        let phase = (frame as f32 / 8.0 + i as f32 * 0.5) * std::f32::consts::PI * 2.0;
+        let height_factor = phase.sin() * 0.5 + 0.5; // 0.0 to 1.0
+        let bar_height = center * 0.4 + center * 0.5 * height_factor;
+
+        let rect_path = PathBuilder::from_rect(
+            tiny_skia::Rect::from_xywh(x, center - bar_height / 2.0, bar_width, bar_height).unwrap()
+        );
+
+        pixmap.fill_path(&rect_path, &paint, tiny_skia::FillRule::Winding, Transform::identity(), None);
+    }
+
+    pixmap.encode_png().unwrap()
+}
+
+fn start_icon_animation(app: AppHandle, animation_type: &str) {
+    let state = app.state::<AppState>();
+
+    // Stop any existing animation
+    *state.animation_running.lock().unwrap() = false;
+    std::thread::sleep(Duration::from_millis(50)); // Wait for previous animation to stop
+
+    // Start new animation
+    let animation_running = Arc::clone(&state.animation_running);
+    *animation_running.lock().unwrap() = true;
+
+    let animation_type = animation_type.to_string();
+
+    std::thread::spawn(move || {
+        let mut frame: u8 = 0;
+
+        while *animation_running.lock().unwrap() {
+            let icon_data = match animation_type.as_str() {
+                "recording" => create_recording_icon(frame),
+                "processing" => create_processing_icon(frame),
+                "transcribing" => create_transcribing_icon(frame),
+                _ => continue,
+            };
+
+            // Update tray icon
+            if let Ok(img) = image::load_from_memory(&icon_data) {
+                let rgba = img.to_rgba8();
+                let (width, height) = rgba.dimensions();
+                let icon_image = Image::new_owned(rgba.into_raw(), width, height);
+
+                let state = app.state::<AppState>();
+                let tray_lock = state.tray_icon.lock().unwrap();
+                if let Some(tray) = tray_lock.as_ref() {
+                    let _ = tray.set_icon(Some(icon_image));
+                }
+            }
+
+            frame = (frame + 1) % 8;
+            std::thread::sleep(Duration::from_millis(125)); // 8 FPS
+        }
+    });
+}
+
+fn stop_icon_animation(app: &AppHandle) {
+    let state = app.state::<AppState>();
+    *state.animation_running.lock().unwrap() = false;
+
+    // Restore default icon
+    std::thread::sleep(Duration::from_millis(150));
+    let tray_lock = state.tray_icon.lock().unwrap();
+    if let Some(tray) = tray_lock.as_ref() {
+        if let Some(icon) = app.default_window_icon() {
+            let _ = tray.set_icon(Some(icon.clone()));
+        }
+    }
+}
+
 fn update_tray_status(app: &AppHandle, status: &str) {
+    println!("Updating tray status to: {}", status);
+
+    match status {
+        "recording" => {
+            start_icon_animation(app.clone(), "recording");
+        }
+        "processing" => {
+            start_icon_animation(app.clone(), "processing");
+        }
+        "transcribing" => {
+            start_icon_animation(app.clone(), "transcribing");
+        }
+        "success" | "error" | "idle" | _ => {
+            stop_icon_animation(app);
+        }
+    }
+
+    // Update tooltip
     let state = app.state::<AppState>();
     let tray_lock = state.tray_icon.lock().unwrap();
     if let Some(tray) = tray_lock.as_ref() {
-        let (tooltip, title) = match status {
-            "recording" => ("AquaVoice - Recording...", "🎙️"),
-            "processing" => ("AquaVoice - Processing...", "⏳"),
-            "transcribing" => ("AquaVoice - Transcribing...", "🔄"),
-            "success" => ("AquaVoice - Done", "✅"),
-            "error" => ("AquaVoice - Error", "❌"),
-            _ => ("AquaVoice - Ready", ""),
+        let tooltip = match status {
+            "recording" => "AquaVoice - Recording...",
+            "processing" => "AquaVoice - Processing...",
+            "transcribing" => "AquaVoice - Transcribing...",
+            "success" => "AquaVoice - Done",
+            "error" => "AquaVoice - Error",
+            _ => "AquaVoice - Ready",
         };
-        println!("Updating tray status to: {} ({})", status, title);
         let _ = tray.set_tooltip(Some(tooltip));
-        let _ = tray.set_title(Some(title));
-    } else {
-        println!("Warning: Tray icon not available");
     }
 }
 
@@ -523,6 +690,7 @@ pub fn run() {
             api_key: Mutex::new(String::new()),
             model: Mutex::new(String::from("gemini-3-pro-preview")),
             tray_icon: Mutex::new(None),
+            animation_running: Arc::new(Mutex::new(false)),
         })
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
