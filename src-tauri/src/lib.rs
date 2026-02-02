@@ -13,6 +13,30 @@ use tauri_plugin_clipboard_manager::ClipboardExt;
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 use tokio::sync::mpsc;
 
+#[cfg(target_os = "macos")]
+#[link(name = "ApplicationServices", kind = "framework")]
+extern "C" {
+    fn AXIsProcessTrustedWithOptions(options: core_foundation::dictionary::CFDictionaryRef) -> bool;
+    fn AXIsProcessTrusted() -> bool;
+}
+
+#[cfg(target_os = "macos")]
+fn check_accessibility_permission() -> bool {
+    unsafe {
+        use core_foundation::base::TCFType;
+        use core_foundation::dictionary::CFDictionary;
+        use core_foundation::string::CFString;
+        use core_foundation::boolean::CFBoolean;
+
+        let key = CFString::new("AXTrustedCheckOptionPrompt");
+        let value = CFBoolean::true_value();
+        
+        let options = CFDictionary::from_CFType_pairs(&[(key, value)]);
+        
+        AXIsProcessTrustedWithOptions(options.as_concrete_TypeRef())
+    }
+}
+
 // Application state
 struct AppState {
     current_shortcut: Mutex<Option<Shortcut>>,
@@ -451,6 +475,13 @@ pub fn run() {
         .setup(move |app| {
             println!("App setup starting...");
 
+            #[cfg(target_os = "macos")]
+            {
+                if !check_accessibility_permission() {
+                    println!("Requesting accessibility permission...");
+                }
+            }
+
             // Start audio processing thread
             start_audio_processing(app.handle().clone(), rx);
 
@@ -479,7 +510,23 @@ pub fn run() {
                 })
                 .build(app)?;
 
+            // Prevent window close from exiting the app
+            if let Some(window) = app.get_webview_window("main") {
+                window.on_window_event(|event| {
+                    if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                        api.prevent_close();
+                    }
+                });
+            }
+
             Ok(())
+        })
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                // Hide window instead of closing
+                api.prevent_close();
+                let _ = window.hide();
+            }
         })
         .invoke_handler(tauri::generate_handler![
             execute_paste,

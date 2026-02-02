@@ -34,3 +34,6 @@ base64 = "0.22"
 
 # Async runtime
 tokio = { version = "1", features = ["sync", "time"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+core-foundation = "0.9"
