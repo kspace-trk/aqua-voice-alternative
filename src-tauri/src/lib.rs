@@ -291,7 +291,7 @@ async fn transcribe_with_gemini(api_key: &str, audio_data: &[u8]) -> Result<Stri
                     },
                 },
                 Part::Text {
-                    text: "音声を文字起こししてください。音声の内容のみを出力し、余計な説明は不要です。"
+                    text: "これは、PC作業時の音声入力のための音声です。音声を文字起こししてください。音声の内容のみを出力し、余計な説明は不要です。"
                         .to_string(),
                 },
             ],
